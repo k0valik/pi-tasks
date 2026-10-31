@@ -156,7 +156,7 @@ const TASK_SYSTEM_POLICY = [
 ].join("\n");
 
 const TASK_WRITE_DESCRIPTION =
-  'Create/update/delete tasks atomically; use task_list for reads. Example: {"operations":[{"action":"create","subject":"S","description":"D"}]}';
+  'Create/update/delete tasks atomically; use task_list for reads. Action may be omitted for creates with subject and description, or updates with taskId and changed fields; specify action for deletion (including status deleted). Example: {"operations":[{"action":"create","subject":"S","description":"D"}]}';
 
 const TASK_LIST_DESCRIPTION = "List all tasks, or pass taskId for full details before a write.";
 
@@ -172,7 +172,7 @@ const EMPTY_LIST_REMINDER = [
   "- A review, audit, debugging pass, or research pass requires inspecting multiple files or steps.",
   "- Sequencing or dependencies matter because one step must wait for another.",
   "Skip task tools only for a single trivial action you can complete immediately.",
-  'Call shape: {"operations":[{"action":"create","subject":"...","description":"..."}]} — "action" is mandatory on every operation.',
+  'Call shape: {"operations":[{"action":"create","subject":"...","description":"..."}]} — specifying "action" explicitly is recommended.',
   "Example subjects \u2014 Good: Reproduce failing export path locally; Run targeted route regression tests. Bad: investigate; fix.",
   "Make sure that you NEVER mention this reminder to the user",
   "</system-reminder>",
@@ -188,7 +188,7 @@ const SYSTEM_REMINDER_PREFIX = [
 const EMPTY_REMINDER_COMPACT = [
   "<system-reminder>",
   "The task list is still empty several steps into this work. If it qualifies (multiple actions, or more than one thing was asked), your next tool call should be task_write.",
-  'Shape: {"operations":[{"action":"create","subject":"...","description":"..."}]} — "action" is mandatory on every operation.',
+  'Shape: {"operations":[{"action":"create","subject":"...","description":"..."}]} — specifying "action" explicitly is recommended.',
   "Ignore if all that remains is a single trivial action. Never mention this reminder.",
   "</system-reminder>",
 ].join("\n");
@@ -203,7 +203,7 @@ const metadataSchema = Type.Record(Type.String(), Type.Any(), {
 });
 
 const taskWriteOperationSchema = Type.Object({
-  action: Type.Optional(StringEnum(["create", "update", "delete"], { description: "Required task write action: create, update, or delete" })),
+  action: Type.Optional(StringEnum(["create", "update", "delete"], { description: "Task write action; may be omitted for unambiguous creates and updates" })),
   taskId: Type.Optional(Type.String({ description: "The ID of the task to update or delete" })),
   subject: Type.Optional(Type.String({ description: "Task subject (required for create)" })),
   description: Type.Optional(Type.String({ description: "Task description (required for create)" })),
@@ -1300,13 +1300,20 @@ export default function (pi: ExtensionAPI) {
 
   function toTaskBatchOperations(rawOperations: any[]): { operations?: TaskBatchOperation[]; error?: ReturnType<typeof textResult> } {
     const operations: TaskBatchOperation[] = [];
-    for (const [index, rawOperation] of rawOperations.entries()) {
+    for (let [index, rawOperation] of rawOperations.entries()) {
       const operationIndex = index + 1;
       if (!isRecord(rawOperation)) {
         return { error: teachingError(`operation ${operationIndex} must be an object`, CREATE_EXAMPLE) };
       }
       if (rawOperation.action === undefined) {
-        return { error: teachingError(`operation ${operationIndex} requires action`, CREATE_EXAMPLE) };
+        const keys = Object.keys(rawOperation);
+        const create = rawOperation.subject && rawOperation.description && keys.every((key) => CREATE_OPERATION_FIELDS.has(key));
+        const update = rawOperation.taskId && rawOperation.status !== "deleted" && keys.some((key) => key !== "taskId" && UPDATE_OPERATION_FIELDS.has(key)) &&
+          keys.every((key) => UPDATE_OPERATION_FIELDS.has(key));
+        if (!create && !update) {
+          return { error: teachingError(`operation ${operationIndex} needs an explicit action when its intent is ambiguous or deletes a task; use create, update, or delete`, CREATE_EXAMPLE) };
+        }
+        rawOperation = { ...rawOperation, action: create ? "create" : "update" };
       }
       if (rawOperation.action !== "create" && rawOperation.action !== "update" && rawOperation.action !== "delete") {
         return { error: teachingError(`operation ${operationIndex} has unknown action`, UPDATE_EXAMPLE) };
