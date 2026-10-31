@@ -32,8 +32,8 @@ const TASK_MANAGEMENT_TOOL_NAMES = new Set(["task_write"]);
 const TASK_TELEMETRY_EXCLUDED_TOOL_NAMES = new Set([...TASK_MANAGEMENT_TOOL_NAMES, "task_list"]);
 const TASK_WIDGET_KEY = "tasks";
 const TASK_WIDGET_SHORTCUT = Key.ctrlAlt("t");
-const REMINDER_INTERVAL = 10;
-const REMINDER_INTERVAL_PRESSURE = 5;
+const REMINDER_INTERVAL = 15;
+const REMINDER_INTERVAL_PRESSURE = 10;
 const CONTEXT_PRESSURE_CHARS = 200000;
 const STATS_METADATA_KEY = "stats";
 const TASK_WIDGET_SETTINGS_KEY = "tasksMode";
@@ -1023,7 +1023,13 @@ export default function (pi: ExtensionAPI) {
     closeAgentActivitySpan(ctx);
   });
 
+  const taskToolsActive = () => {
+    const activeTools = pi.getActiveTools();
+    return activeTools.includes("task_write") && activeTools.includes("task_list");
+  };
+
   pi.on("before_agent_start", async (_event, ctx) => {
+    if (!taskToolsActive()) return undefined;
     prepareStore(ctx);
     // Reminders ride the prompt result so pi persists them in the conversation history;
     // context-phase results are request-local and would vanish after one request. The
@@ -1244,6 +1250,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("context_with_system", async (event) => {
+    if (!taskToolsActive()) return undefined;
     // This phase preserves system updates in place. Inserting through context instead
     // would move later instructions ahead of signed thinking and invalidate its prefix.
     // Keep the policy byte-stable and adjacent to the initial head on every request,

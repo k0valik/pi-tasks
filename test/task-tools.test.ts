@@ -139,8 +139,10 @@ function mockPi() {
   const shortcuts = new Map<string, any>();
   const lifecycleHandlers = new Map<string, ((...args: any[]) => any)[]>();
   const sentMessages: Array<{ message: any; options: any }> = [];
+  let activeTools = ["task_write", "task_list"];
 
   const pi = {
+    getActiveTools() { return activeTools; },
     registerEntryRenderer(name: string, renderer: unknown) {
       entryRenderers.set(name, renderer);
     },
@@ -173,6 +175,7 @@ function mockPi() {
 
   return {
     pi,
+    setActiveTools(names: string[]) { activeTools = names; },
     tools,
     commands,
     shortcuts,
@@ -2406,7 +2409,32 @@ describe("pi-tasks extension", () => {
     cleanupStore(storePath);
   });
 
-  it("delivers a persisted read-only reminder message after 10 turns and repeats every 10 turns", async () => {
+  it("suppresses task guidance unless both task tools are active, including after tool changes", async () => {
+    const sessionId = `todo-inactive-tools-${Date.now()}`;
+    const storePath = getSessionTaskDirPath(sessionId);
+    cleanupStore(storePath);
+    const mock = mockPi();
+    const ctx = mockCtx(sessionId);
+    initExtension(mock.pi as any);
+
+    for (const tools of [[], ["task_write"], ["task_list"]]) {
+      mock.setActiveTools(tools);
+      const [reminder] = await mock.fireLifecycle("before_agent_start", {}, ctx);
+      const [policy] = await mock.fireLifecycle("context_with_system", { messages: [] }, ctx);
+      expect(reminder).toBeUndefined();
+      expect(policy).toBeUndefined();
+    }
+    mock.setActiveTools(["task_write", "task_list"]);
+    const [reminder] = await mock.fireLifecycle("before_agent_start", {}, ctx);
+    expect(reminder?.message?.content?.[0]?.text).toContain("The task list is empty");
+    const [policy] = await mock.fireLifecycle("context_with_system", { messages: [] }, ctx);
+    expect(policy?.messages?.[0]?.content).toContain("Task workflow guidance:");
+    mock.setActiveTools([]);
+    expect((await mock.fireLifecycle("context_with_system", { messages: [] }, ctx))[0]).toBeUndefined();
+    cleanupStore(storePath);
+  });
+
+  it("delivers a persisted read-only reminder message after 15 turns and repeats every 15 turns", async () => {
     const sessionId = `todo-reminder-${Date.now()}`;
     const storePath = getSessionTaskDirPath(sessionId);
     cleanupStore(storePath);
@@ -2420,7 +2448,7 @@ describe("pi-tasks extension", () => {
     await mock.createTask( { subject: "Done", description: "Desc" }, ctx);
     await mock.updateTask( { taskId: "2", status: "completed" }, ctx);
 
-    for (let turn = 0; turn < 8; turn++) {
+    for (let turn = 0; turn < 13; turn++) {
       await mock.fireLifecycle("turn_start", {}, ctx);
     }
     const [gatedFirst] = await mock.fireLifecycle("before_agent_start", {}, ctx);
@@ -2444,7 +2472,7 @@ describe("pi-tasks extension", () => {
     expect((await mock.executeTool("task_list", {}, ctx)).content[0].text).toBe("#2 [completed] Done · 0s\n#1 [pending] Open");
     expect(readTaskFile(storePath, "2").status).toBe("completed");
 
-    for (let turn = 0; turn < 9; turn++) {
+    for (let turn = 0; turn < 14; turn++) {
       await mock.fireLifecycle("turn_start", {}, ctx);
     }
     const [gatedSecond] = await mock.fireLifecycle("before_agent_start", {}, ctx);
@@ -2468,7 +2496,7 @@ describe("pi-tasks extension", () => {
     await mock.fireLifecycle("before_agent_start", {}, ctx);
     await mock.createTask( { subject: "Open", description: "Desc" }, ctx);
 
-    for (let turn = 0; turn < 9; turn++) {
+    for (let turn = 0; turn < 14; turn++) {
       await mock.fireLifecycle("turn_start", {}, ctx);
     }
     await mock.executeTool("task_list", {}, ctx);
@@ -2492,7 +2520,7 @@ describe("pi-tasks extension", () => {
     await mock.createTask( { subject: "Done", description: "Desc" }, ctx);
     await mock.updateTask( { taskId: "1", status: "completed" }, ctx);
 
-    for (let turn = 0; turn < 9; turn++) {
+    for (let turn = 0; turn < 14; turn++) {
       await mock.fireLifecycle("turn_start", {}, ctx);
     }
 
@@ -2515,7 +2543,7 @@ describe("pi-tasks extension", () => {
     const [oneTime] = await mock.fireLifecycle("before_agent_start", {}, ctx);
     expect(oneTime.message.content[0].text).toContain("The task list is empty");
 
-    for (let turn = 0; turn < 8; turn++) await mock.fireLifecycle("turn_start", {}, ctx);
+    for (let turn = 0; turn < 13; turn++) await mock.fireLifecycle("turn_start", {}, ctx);
     const [gated] = await mock.fireLifecycle("before_agent_start", {}, ctx);
     expect(gated?.message).toBeUndefined();
 
@@ -2539,7 +2567,7 @@ describe("pi-tasks extension", () => {
     await mock.fireLifecycle("before_agent_start", {}, ctx);
     await mock.createTask({ subject: "Open", description: "Desc" }, ctx);
 
-    for (let turn = 0; turn < 9; turn++) await mock.fireLifecycle("turn_start", {}, ctx);
+    for (let turn = 0; turn < 14; turn++) await mock.fireLifecycle("turn_start", {}, ctx);
 
     // Malformed create is rejected with a teaching error; it must NOT count as recent use.
     const failed = await mock.executeTool("task_write", { operations: [{ action: "create", subject: "only subject" }] }, ctx);
@@ -2551,7 +2579,7 @@ describe("pi-tasks extension", () => {
     cleanupStore(storePath);
   });
 
-  it("tightens the reminder interval to 5 turns under context pressure", async () => {
+  it("tightens the reminder interval to 10 turns under context pressure", async () => {
     const sessionId = `todo-reminder-pressure-${Date.now()}`;
     const storePath = getSessionTaskDirPath(sessionId);
     cleanupStore(storePath);
@@ -2568,7 +2596,7 @@ describe("pi-tasks extension", () => {
     expect(armed).toBeUndefined();
     expect(heavy).toEqual([{ role: "user", content: "x".repeat(200001) }]);
 
-    for (let turn = 0; turn < 3; turn++) await mock.fireLifecycle("turn_start", {}, ctx);
+    for (let turn = 0; turn < 8; turn++) await mock.fireLifecycle("turn_start", {}, ctx);
     const [gated] = await mock.fireLifecycle("before_agent_start", {}, ctx);
     expect(gated?.message).toBeUndefined();
 

@@ -94,6 +94,7 @@ afterEach(() => {
 async function createFixture(
   replies: Array<"text" | "list"> = [],
   sessionManager = SessionManager.create(directory, join(directory, "sessions")),
+  tools = ["task_list", "task_write"],
 ) {
   const requests: Request[] = [];
   let revision = "Original project instructions.";
@@ -134,7 +135,7 @@ async function createFixture(
     taskDirectories.push(getSessionTaskDirPath(sessionManager.getSessionFile() ?? sessionManager.getSessionId()));
     const { session } = await createAgentSession({
       cwd: directory, agentDir: directory, model, modelRuntime, resourceLoader, settingsManager, sessionManager,
-      thinkingLevel: "high", tools: ["task_list", "task_write"],
+      thinkingLevel: "high", tools,
     });
     sessions.push(session);
     return session;
@@ -152,6 +153,21 @@ async function createFixture(
     },
   };
 }
+
+it("does not send task guidance when the task tools are inactive", async () => {
+  const { session, requests, updateInstructions, resume } = await createFixture([], undefined, []);
+  await session.prompt("First request.");
+  updateInstructions();
+  const resumed = await resume();
+  await resumed.prompt("Continue after restart.");
+  expect(requests).toHaveLength(2);
+  for (const request of requests) {
+    expect(JSON.stringify(request.messages)).not.toContain("Task workflow guidance:");
+    expect(JSON.stringify(request.messages)).not.toContain("The task list is empty");
+    expect(JSON.stringify(request.tools ?? [])).not.toContain("task_write");
+  }
+  expect(requests[1].messages.slice(0, requests[0].messages.length)).toEqual(requests[0].messages);
+});
 
 it("preserves the historical request prefix when project instructions change", async () => {
   const { session, requests, updateInstructions } = await createFixture();

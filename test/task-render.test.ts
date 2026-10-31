@@ -52,6 +52,7 @@ function mockPi() {
   const tools = new Map<string, any>();
   const lifecycleHandlers = new Map<string, ((...args: any[]) => any)[]>();
   const pi = {
+    getActiveTools() { return ["task_write", "task_list"]; },
     registerTool(def: any) { tools.set(def.name, def); },
     registerEntryRenderer() {},
     registerCommand() {},
