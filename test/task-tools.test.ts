@@ -342,12 +342,12 @@ describe("pi-tasks extension", () => {
     expect(result.messages[0].role).toBe("user");
     expect(result.messages[0].content).toContain("<system-reminder>");
     expect(result.messages[0].content).toContain("Task workflow guidance:");
-    expect(result.messages[0].content).toContain("Create tasks with task_write for multi-step or multi-part work");
-    expect(result.messages[0].content).toContain("Skip for a single trivial action");
-    expect(result.messages[0].content).toContain("Mark a task in_progress before substantial work starts");
-    expect(result.messages[0].content).toContain("Mark a task completed only when the work is fully done");
+    expect(result.messages[0].content).toContain("overarching plan that outlives this exchange");
+    expect(result.messages[0].content).toContain("Skip it for mundane work you can finish in this reply");
+    expect(result.messages[0].content).toContain("Mark a task in_progress before substantial work");
+    expect(result.messages[0].content).toContain("completed only when fully done");
     expect(result.messages[0].content).toContain("call task_list to pick the next ready item");
-    expect(result.messages[0].content).toContain("one task_write call instead of parallel task_write calls");
+    expect(result.messages[0].content).toContain("Batch related writes into one task_write call");
     expect(result.messages[0].content).toContain("</system-reminder>");
     // Existing messages survive unmodified after the policy message.
     expect(result.messages.slice(1)).toEqual(conversation);
@@ -441,7 +441,7 @@ describe("pi-tasks extension", () => {
 
     expect(writeTool.description).toContain("Create/update/delete tasks atomically");
     expect(writeTool.description).toContain("use task_list for reads");
-    expect(writeTool.description).toContain('{"operations":[{"action":"create"');
+    expect(writeTool.description).toContain("Action may be omitted for creates");
     expect(listTool.description).toContain("pass taskId for full details");
   });
 

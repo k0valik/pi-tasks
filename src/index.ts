@@ -143,24 +143,23 @@ type TaskBatchOperation =
 
 // One home per rule (PRD-0001 / ADR-0001): this policy block owns lifecycle rules and is
 // the only always-on policy text; tool descriptions own per-tool contract facts and
-// cross-tool routing. Do not restate a rule in more than one channel.
+// cross-tool routing. Do not restate a rule in more than one channel. It scopes the list
+// to a durable plan that outlives the current exchange, never a log of imminent steps.
 const TASK_SYSTEM_POLICY = [
   "Task workflow guidance:",
-  "- Create tasks with task_write for multi-step or multi-part work, including reviews, audits, debugging, and research passes that span multiple files; also when you generate follow-up steps while working that should not be lost. Skip for a single trivial action.",
-  "- Capture or revise the task list early once the work has become multi-step.",
-  "- Mark a task in_progress before substantial work starts.",
-  "- Mark a task completed only when the work is fully done; if it is partial, blocked, or failing verification, leave it pending or in_progress.",
-  "- After completing a task, call task_list to pick the next ready item; prefer lower task IDs when equally ready.",
-  "- Use task_list to refresh stale details before updating a task whose latest state may have changed.",
-  "- Keep shared task-list writes in one task_write call instead of parallel task_write calls; when subagents help execute work, the parent agent owns the canonical task list.",
+  "- Use task_write for multi-step or multi-part work forming an overarching plan that outlives this exchange: reviews, audits, debugging, or research spanning multiple files, and follow-up steps worth surviving compaction. Skip it for mundane work you can finish in this reply.",
+  "- Capture or revise the list early, before the work scatters.",
+  "- Mark a task in_progress before substantial work; completed only when fully done. Partial, blocked, or failing verification stays pending or in_progress.",
+  "- Batch related writes into one task_write call. When subagents help, the parent owns the list.",
+  "- After finishing a task, call task_list to pick the next ready item, preferring lower IDs when equally ready.",
 ].join("\n");
 
 const TASK_WRITE_DESCRIPTION =
-  'Create/update/delete tasks atomically; use task_list for reads. Action may be omitted for creates with subject and description, or updates with taskId and changed fields; specify action for deletion (including status deleted). Example: {"operations":[{"action":"create","subject":"S","description":"D"}]}';
+  'Create/update/delete tasks atomically; use task_list for reads. Action may be omitted for creates with subject and description, or updates with taskId and changed fields; specify action for deletion (including status deleted).';
 
 const TASK_LIST_DESCRIPTION = "List all tasks, or pass taskId for full details before a write.";
 
-const TASK_WRITE_SNIPPET = "Create, update, or delete tasks atomically";
+const TASK_WRITE_SNIPPET = "Create, update, or delete tasks";
 const TASK_LIST_SNIPPET = "List tasks or read one task's details";
 
 const EMPTY_LIST_REMINDER = [
@@ -199,19 +198,19 @@ const SYSTEM_REMINDER_SUFFIX = [
 ] as const;
 
 const metadataSchema = Type.Record(Type.String(), Type.Any(), {
-  description: "Arbitrary metadata to attach to the task",
+  description: "Arbitrary metadata",
 });
 
 const taskWriteOperationSchema = Type.Object({
-  action: Type.Optional(StringEnum(["create", "update", "delete"], { description: "Task write action; may be omitted for unambiguous creates and updates" })),
-  taskId: Type.Optional(Type.String({ description: "The ID of the task to update or delete" })),
-  subject: Type.Optional(Type.String({ description: "Task subject (required for create)" })),
-  description: Type.Optional(Type.String({ description: "Task description (required for create)" })),
-  status: Type.Optional(StringEnum(["pending", "in_progress", "completed", "deleted"], { description: "Task status: pending, in_progress, completed, or deleted" })),
-  activeForm: Type.Optional(Type.String({ description: "Present continuous form shown while in_progress" })),
+  action: Type.Optional(StringEnum(["create", "update", "delete"])),
+  taskId: Type.Optional(Type.String()),
+  subject: Type.Optional(Type.String()),
+  description: Type.Optional(Type.String()),
+  status: Type.Optional(StringEnum(["pending", "in_progress", "completed", "deleted"])),
+  activeForm: Type.Optional(Type.String({ description: "Shown while in_progress" })),
   metadata: Type.Optional(metadataSchema),
-  addBlocks: Type.Optional(Type.Array(Type.String(), { description: "Update only: task IDs this task blocks" })),
-  addBlockedBy: Type.Optional(Type.Array(Type.String(), { description: "Update only: task IDs that block this task" })),
+  addBlocks: Type.Optional(Type.Array(Type.String(), { description: "Task IDs this task blocks" })),
+  addBlockedBy: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that block this task" })),
 });
 
 function debug(...args: unknown[]) {
@@ -1422,7 +1421,7 @@ export default function (pi: ExtensionAPI) {
     description: TASK_WRITE_DESCRIPTION,
     promptSnippet: TASK_WRITE_SNIPPET,
     parameters: Type.Object({
-      operations: Type.Array(taskWriteOperationSchema, { description: "Ordered task operations to apply atomically" }),
+      operations: Type.Array(taskWriteOperationSchema, { description: "Applied atomically in order" }),
     }),
     prepareArguments: prepareTaskWriteArguments,
     execute(_toolCallId, params, _signal, _onUpdate, ctx) {
