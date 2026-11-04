@@ -58,7 +58,7 @@ afterEach(() => {
 function mockCtx(
   sessionId: string,
   hasUI = false,
-  options?: { confirmResponses?: boolean[]; sessionFile?: string; leafId?: string | null; terminalRows?: number },
+  options?: { confirmResponses?: boolean[]; sessionFile?: string; leafId?: string | null; terminalRows?: number; branch?: any[] },
 ) {
   const widgets = new Map<string, string[] | undefined>();
   const widgetSetCalls = new Map<string, number>();
@@ -84,7 +84,7 @@ function mockCtx(
       getSessionId: () => sessionId,
       getSessionFile: () => options?.sessionFile,
       getLeafId: () => leafId,
-      getBranch: () => [],
+      getBranch: () => options?.branch ?? [],
     },
     ui: {
       notify(message: string, level: string) {
@@ -2603,6 +2603,107 @@ describe("pi-tasks extension", () => {
     await mock.fireLifecycle("turn_start", {}, ctx);
     const [reminder] = await mock.fireLifecycle("before_agent_start", {}, ctx);
     expect(reminder?.message?.content?.[0]?.text).toContain("#1 [pending] Open");
+
+    cleanupStore(storePath);
+  });
+
+  // A restart zeroes currentTurn, so without a recovered cooldown every restart would re-arm a
+  // full fresh interval and discard the rounds a reminder already earned.
+  function reminderBranchEntry() {
+    return {
+      type: "custom_message",
+      customType: "task_reminder",
+      content: [{ type: "text", text: "The task tools haven't been used recently." }],
+      display: false,
+      id: `reminder-${Math.random().toString(36).slice(2, 8)}`,
+    };
+  }
+
+  function assistantBranchEntry() {
+    return {
+      type: "message",
+      id: `assistant-${Math.random().toString(36).slice(2, 8)}`,
+      message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
+    };
+  }
+
+  // A branch whose newest task_reminder is followed by `rounds` assistant messages, i.e. the
+  // agent already burned that many LLM rounds past the last reminder before the restart.
+  function branchWithReminder(rounds: number) {
+    return [reminderBranchEntry(), ...Array.from({ length: rounds }, assistantBranchEntry)];
+  }
+
+  async function restartedSession(sessionId: string, branch: any[], rounds: number) {
+    const mock = mockPi();
+    const ctx = mockCtx(sessionId, false, { branch });
+    initExtension(mock.pi as any);
+    await mock.fireLifecycle("session_start", { reason: "restart" }, ctx);
+    const [immediate] = await mock.fireLifecycle("before_agent_start", {}, ctx);
+    let firstFireTurn: number | undefined;
+    for (let turn = 1; turn <= rounds; turn++) {
+      await mock.fireLifecycle("turn_start", {}, ctx);
+      const [reminder] = await mock.fireLifecycle("before_agent_start", {}, ctx);
+      if (reminder?.message && firstFireTurn === undefined) firstFireTurn = turn;
+    }
+    return { immediate: !!immediate?.message, firstFireTurn };
+  }
+
+  it("charges rounds already served against the reminder interval across a restart", async () => {
+    const sessionId = `todo-reminder-restart-${Date.now()}`;
+    const storePath = getSessionTaskDirPath(sessionId);
+    cleanupStore(storePath);
+
+    const mock = mockPi();
+    const ctx = mockCtx(sessionId);
+    initExtension(mock.pi as any);
+    await mock.createTask({ subject: "Open", description: "Desc" }, ctx);
+
+    // 10 rounds already elapsed past the last reminder, so the restart owes 10 extra rounds
+    // on top of the interval rather than a flat fresh window.
+    const early = await restartedSession(sessionId, branchWithReminder(10), 20);
+    expect(early.immediate).toBe(false);
+    expect(early.firstFireTurn).toBeUndefined();
+
+    const due = await restartedSession(sessionId, branchWithReminder(10), 30);
+    expect(due.firstFireTurn).toBe(24);
+
+    cleanupStore(storePath);
+  });
+
+  it("still re-arms a full interval when the branch carries no reminder", async () => {
+    const sessionId = `todo-reminder-restart-fresh-${Date.now()}`;
+    const storePath = getSessionTaskDirPath(sessionId);
+    cleanupStore(storePath);
+
+    const mock = mockPi();
+    const ctx = mockCtx(sessionId);
+    initExtension(mock.pi as any);
+    await mock.createTask({ subject: "Open", description: "Desc" }, ctx);
+
+    const branch: any[] = [];
+    const restarted = await restartedSession(sessionId, branch, 20);
+    expect(restarted.immediate).toBe(false);
+    expect(restarted.firstFireTurn).toBe(14);
+
+    cleanupStore(storePath);
+  });
+
+  it("does not re-remind across repeated restarts that each carry a single message", async () => {
+    const sessionId = `todo-reminder-restart-loop-${Date.now()}`;
+    const storePath = getSessionTaskDirPath(sessionId);
+    cleanupStore(storePath);
+
+    const mock = mockPi();
+    const ctx = mockCtx(sessionId);
+    initExtension(mock.pi as any);
+    await mock.createTask({ subject: "Open", description: "Desc" }, ctx);
+
+    const branch = branchWithReminder(0);
+    for (let restart = 0; restart < 5; restart++) {
+      const result = await restartedSession(sessionId, branch, 1);
+      expect(result.immediate).toBe(false);
+      expect(result.firstFireTurn).toBeUndefined();
+    }
 
     cleanupStore(storePath);
   });

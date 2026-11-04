@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Key, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
@@ -336,6 +336,29 @@ function taskReminderMessage(text: string) {
     content: [{ type: "text" as const, text }],
     display: false,
   };
+}
+
+// Rounds elapsed since the newest task_reminder on this branch, in currentTurn's unit:
+// one turn_start per LLM round, so one assistant message per round. Counting every entry
+// instead would inflate the figure ~8x (tool results and user prompts interleave) and
+// suppress reminders far past the interval.
+//
+// resetSessionState zeroes currentTurn, which would otherwise discard the cooldown a
+// reminder already earned and re-arm a full fresh window on every restart. Callers charge
+// this distance against the new window so a restart cannot hand back an interval the agent
+// already spent.
+function turnsSinceLastReminder(branch: readonly SessionEntry[]): number | undefined {
+  for (let index = branch.length - 1; index >= 0; index--) {
+    const entry = branch[index];
+    if (entry.type !== "custom_message" || entry.customType !== "task_reminder") continue;
+    let rounds = 0;
+    for (let after = index + 1; after < branch.length; after++) {
+      const later = branch[after];
+      if (later.type === "message" && later.message.role === "assistant") rounds++;
+    }
+    return rounds;
+  }
+  return undefined;
 }
 
 function getAgentDirPath(): string {
@@ -983,14 +1006,23 @@ export default function (pi: ExtensionAPI) {
   }
 
   function resetSessionState(ctx: ExtensionContext, options?: { previousSessionFile?: string }) {
-    historicalWrites = restoreTaskWriteHistory(ctx.sessionManager.getBranch());
+    const branch = ctx.sessionManager.getBranch() ?? [];
+    const turnsSinceReminder = turnsSinceLastReminder(branch);
+    historicalWrites = restoreTaskWriteHistory(branch);
     stopWidgetTicker();
     widgetRegistered = false;
     widgetTui = undefined;
     widgetSuppressedForInput = false;
     currentTurn = 0;
     lastTaskToolUseTurn = 0;
-    lastReminderTurn = 0;
+    // A restart zeroes currentTurn, so the interval would re-arm from scratch and forget the
+    // rounds a reminder already earned. The branch still holds that reminder plus every round
+    // served since, so charge those rounds against the new window: the gate then waits
+    // interval + roundsSinceReminder instead of a flat interval. Suppression is the point —
+    // a crash loop must not re-remind an agent that was just reminded.
+    // Measured in currentTurn's unit (one turn_start per LLM round = one assistant message per
+    // round); counting every entry instead would inflate this ~8x.
+    lastReminderTurn = turnsSinceReminder ?? 0;
     emptyListNudgeShown = false;
     contextUnderPressure = false;
     activeTaskId = undefined;
