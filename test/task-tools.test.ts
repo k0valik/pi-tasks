@@ -342,11 +342,13 @@ describe("pi-tasks extension", () => {
     expect(result.messages[0].role).toBe("user");
     expect(result.messages[0].content).toContain("<system-reminder>");
     expect(result.messages[0].content).toContain("Task workflow guidance:");
-    expect(result.messages[0].content).toContain("overarching plan that outlives this exchange");
-    expect(result.messages[0].content).toContain("Skip it for mundane work you can finish in this reply");
-    expect(result.messages[0].content).toContain("Mark a task in_progress before substantial work");
+    expect(result.messages[0].content).toContain("only for work likely to span several turns or compaction");
+    expect(result.messages[0].content).toContain("Ordinary inspection, editing and validation does not qualify");
+    expect(result.messages[0].content).toContain("mundane work you can finish in this reply");
+    expect(result.messages[0].content).toContain("Mark a task in_progress when it becomes the active work");
     expect(result.messages[0].content).toContain("completed only when fully done");
-    expect(result.messages[0].content).toContain("call task_list to pick the next ready item");
+    expect(result.messages[0].content).toContain("Update the same entry as understanding changes");
+    expect(result.messages[0].content).toContain("Continue to the next open task");
     expect(result.messages[0].content).toContain("Batch related writes into one task_write call");
     expect(result.messages[0].content).toContain("</system-reminder>");
     // Existing messages survive unmodified after the policy message.

@@ -147,11 +147,12 @@ type TaskBatchOperation =
 // to a durable plan that outlives the current exchange, never a log of imminent steps.
 const TASK_SYSTEM_POLICY = [
   "Task workflow guidance:",
-  "- Use task_write for multi-step or multi-part work forming an overarching plan that outlives this exchange: reviews, audits, debugging, or research spanning multiple files, and follow-up steps worth surviving compaction. Skip it for mundane work you can finish in this reply.",
-  "- Capture or revise the list early, before the work scatters.",
-  "- Mark a task in_progress before substantial work; completed only when fully done. Partial, blocked, or failing verification stays pending or in_progress.",
+  "- Use task_write only for work likely to span several turns or compaction: independent workstreams, dependencies between steps, or state worth handing off. Ordinary inspection, editing and validation does not qualify, and neither does mundane work you can finish in this reply.",
+  "- Capture tasks when a durable plan or handoff is useful; revise them as scope changes.",
+  "- Mark a task in_progress when it becomes the active work; completed only when fully done. Partial, blocked, or failing verification stays pending or in_progress.",
+  "- Update the same entry as understanding changes. Descriptions carry objective state, constraints and next action, not a transcript of work.",
+  "- Continue to the next relevant task when the current request and plan call for it; use task_list when current state is needed.",
   "- Batch related writes into one task_write call. When subagents help, the parent owns the list.",
-  "- After finishing a task, call task_list to pick the next ready item, preferring lower IDs when equally ready.",
 ].join("\n");
 
 const TASK_WRITE_DESCRIPTION =
