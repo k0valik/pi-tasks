@@ -348,7 +348,7 @@ describe("pi-tasks extension", () => {
     expect(result.messages[0].content).toContain("Mark a task in_progress when it becomes the active work");
     expect(result.messages[0].content).toContain("completed only when fully done");
     expect(result.messages[0].content).toContain("Update the same entry as understanding changes");
-    expect(result.messages[0].content).toContain("Continue to the next open task");
+    expect(result.messages[0].content).toContain("Continue to the next relevant task when the current request and plan call for it");
     expect(result.messages[0].content).toContain("Batch related writes into one task_write call");
     expect(result.messages[0].content).toContain("</system-reminder>");
     // Existing messages survive unmodified after the policy message.
@@ -2377,7 +2377,7 @@ describe("pi-tasks extension", () => {
     expect(nudgeText).toContain('{"operations":[{"action":"create","subject":"...","description":"..."}]}');
     expect(nudgeText).toContain("more than one thing in a single prompt");
     expect(nudgeText).toContain("review, audit, debugging pass, or research pass");
-    expect(nudgeText).toContain("NEVER mention this reminder");
+    expect(nudgeText).toContain("Skip task tools for work that won't outlast this reply");
     expect(mock.sentMessages).toHaveLength(0);
 
     // One-time: the next prompt carries no second nudge, and the request-stage injection stays

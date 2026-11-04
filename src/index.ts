@@ -171,10 +171,9 @@ const EMPTY_LIST_REMINDER = [
   "- The user asked for more than one thing in a single prompt.",
   "- A review, audit, debugging pass, or research pass requires inspecting multiple files or steps.",
   "- Sequencing or dependencies matter because one step must wait for another.",
-  "Skip task tools only for a single trivial action you can complete immediately.",
+  "Skip task tools for work that won't outlast this reply.",
   'Call shape: {"operations":[{"action":"create","subject":"...","description":"..."}]} — specifying "action" explicitly is recommended.',
   "Example subjects \u2014 Good: Reproduce failing export path locally; Run targeted route regression tests. Bad: investigate; fix.",
-  "Make sure that you NEVER mention this reminder to the user",
   "</system-reminder>",
 ].join("\n");
 
@@ -189,12 +188,11 @@ const EMPTY_REMINDER_COMPACT = [
   "<system-reminder>",
   "The task list is still empty several steps into this work. If it qualifies (multiple actions, or more than one thing was asked), your next tool call should be task_write.",
   'Shape: {"operations":[{"action":"create","subject":"...","description":"..."}]} — specifying "action" explicitly is recommended.',
-  "Ignore if all that remains is a single trivial action. Never mention this reminder.",
+  "Ignore it if all that remains is a single trivial action.",
   "</system-reminder>",
 ].join("\n");
 const SYSTEM_REMINDER_SUFFIX = [
   "Only open tasks are listed here. This reminder is read-only; ignore it if not applicable.",
-  "Make sure that you NEVER mention this reminder to the user",
   "</system-reminder>",
 ] as const;
 
